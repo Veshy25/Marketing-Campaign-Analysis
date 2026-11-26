@@ -1,23 +1,15 @@
-###PythonProject1, Analysing Marketing Campaign Data
+### Marketing Campaign Analysis: analysing customer behaviour and campaign response
 
 #==========================================================================
-## 1)Importing and Installing Required Libraries
+## 1) Importing Required Libraries
 #==========================================================================
-# Import Libraries 
-import subprocess
-import sys
+# Install the pinned versions once before running:
+#   pip install -r requirements.txt
 
-# List of packages to install  
-packages = ['pandas', 'numpy', 'matplotlib', 'seaborn', 'scipy', 'scikit-learn', 'statsmodels']  
-  
-# Loop through and install each  
-for package in packages:  
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-# Set Visualization Style 
+# Set Visualisation Style
 seaborn_style = 'whitegrid'
 
-# Import necessary libraries after installation
+# Import libraries
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,7 +31,7 @@ file_path = "marketing_campaign.csv"
 df = pd.read_csv(file_path, sep=';')
 
 #===========================================================================
-## 2) Basic Data Exploration, Visualization & Basic Data Cleaning 
+## 2) Basic Data Exploration, Visualisation & Basic Data Cleaning 
 #===========================================================================
 
 # View First 5 Rows of Dataset 
@@ -55,7 +47,7 @@ print("\n❓ Missing Values:\n")
 print(df.isnull().sum())
 
 # Remove the rows where there is at least 1 missing value 
-df_cleaned = df.dropna()
+df_cleaned = df.dropna().copy()  # .copy() so later edits don't act on a view of df
 
 # Optional: Check how many rows were removed
 print(f"🧹 Rows before cleaning: {df.shape[0]}")
@@ -153,8 +145,8 @@ print(df_cleaned['Marital_Status'].unique())
 print("\n📊 Value counts in 'Marital_Status' after replacement:")
 print(df_cleaned['Marital_Status'].value_counts())
 
-# Check for Outliers through Visualization
-# Columns to visualize and detect outliers
+# Check for Outliers through Visualisation
+# Columns to visualise and detect outliers
 num_vars = [
     'Income','Year_Birth', 'Kidhome', 'Teenhome', 'Recency', 
     'MntWines', 'MntFruits', 'MntMeatProducts', 'MntFishProducts', 
@@ -163,7 +155,7 @@ num_vars = [
     'NumWebVisitsMonth'
 ]
 
-# Visualize outliers using boxplots
+# Visualise outliers using boxplots
 plt.figure(figsize=(18, 20))
 
 for i, col in enumerate(num_vars, 1):
@@ -215,7 +207,10 @@ print("\n🔍 Data type of 'Dt_Customer':")
 print(df_cleaned['Dt_Customer'].dtype)
 print(df_cleaned['Dt_Customer'].head())
 # Convert 'Dt_Customer' to datetime format from object string type
-df_cleaned.loc[:, 'Dt_Customer'] = pd.to_datetime(df_cleaned['Dt_Customer'], errors='coerce')
+## Plain column assignment (not .loc[:, ...]) so the column becomes a true datetime dtype
+df_cleaned['Dt_Customer'] = pd.to_datetime(df_cleaned['Dt_Customer'], format='%Y-%m-%d')
+print(f"📅 Customers enrolled between {df_cleaned['Dt_Customer'].min().date()} "
+      f"and {df_cleaned['Dt_Customer'].max().date()}")
 
 
 # Total Campaigns Accepted Transformation
@@ -227,7 +222,11 @@ df_cleaned.loc[:, 'Total_Campaigns_Accepted'] = df_cleaned[[
 
 # Age Group Transformation
 ## Create Age column
-df_cleaned.loc[:, 'Age'] = 2025 - df_cleaned['Year_Birth']
+## Age is measured at the time the data was collected (the latest enrolment year),
+## not today's date - otherwise every customer looks about 11 years older than they were
+reference_year = df_cleaned['Dt_Customer'].dt.year.max()
+print(f"📅 Ages measured as at {reference_year}")
+df_cleaned.loc[:, 'Age'] = reference_year - df_cleaned['Year_Birth']
 # Create Age Group column using pd.cut
 df_cleaned.loc[:, 'Age_Group'] = pd.cut(df_cleaned['Age'],
                                         bins=[0, 30, 45, 60, 100],
@@ -247,7 +246,7 @@ plt.title("Total Purchases by Marketing Channel")
 plt.ylabel("Number of Purchases")
 plt.show()
 
-# Caimpaign Acceptance vs Channel usage - Check if people who accepted campaigns tend to use certain channels more. 
+# Campaign Acceptance vs Channel usage - Check if people who accepted campaigns tend to use certain channels more. 
 # Create a mask for customers who accepted at least one campaign
 responders = df_cleaned[df_cleaned['Total_Campaigns_Accepted'] > 0]
 
@@ -259,7 +258,7 @@ plt.show()
 
 # Cross-tab by Age - Which channel works better for which demographic? 
 # Average web purchases by age group
-df_cleaned.groupby('Age_Group')['NumWebPurchases'].mean().plot(kind='bar')
+df_cleaned.groupby('Age_Group', observed=True)['NumWebPurchases'].mean().plot(kind='bar')
 plt.title("Avg Web Purchases by Age Group")
 plt.ylabel("Average")
 plt.show()
@@ -278,7 +277,7 @@ product_cols = [
 ## This Reflects the *reach* - how widely each product category is adopted 
 popular_counts = (df_cleaned[product_cols] > 0).sum().sort_values(ascending=False)
 
-# Calcuate average spend per customer per category
+# Calculate average spend per customer per category
 ## This reflects the *depth* - how much customers typically spend on each category
 avg_spend = df_cleaned[product_cols].mean().sort_values(ascending=False)
 
@@ -288,7 +287,7 @@ combined = pd.DataFrame({
     'Avg Spend': avg_spend
 })
 
-# Normalize the two columns to 0–1 scale
+# Normalise the two columns to 0–1 scale
 ## This is necessary to fairly combine reach and spend into a score 
 combined['% Customers (Norm)'] = combined['% Customers'] / combined['% Customers'].max()
 combined['Avg Spend (Norm)'] = combined['Avg Spend'] / combined['Avg Spend'].max()
@@ -309,7 +308,9 @@ plt.figure(figsize=(10, 6))
 sns.barplot(
     x=display_table['Popularity Score'],
     y=display_table.index,
-    palette='Blues_d'
+    hue=display_table.index,
+    palette='Blues_d',
+    legend=False
 )
 plt.title('Product Category Popularity (Composite Score)')
 plt.xlabel('Popularity Score')
@@ -321,49 +322,69 @@ plt.show()
 ## 6) Which Customer Segments are most likely to respond to campaigns? : Question 2 
 # ===========================================================================
 
-#Response rate by Age Group 
-response_by_age = df_cleaned.groupby('Age_Group')['Responded'].mean().sort_values(ascending=False)
+# "Responded" = accepted at least one of the six campaigns (AcceptedCmp1-5 and Response)
+# The overall rate is the baseline each segment is compared against
+overall_rate = df_cleaned['Responded'].mean()
+print(f"✅ Overall response rate: {overall_rate:.3f} "
+      f"({df_cleaned['Responded'].sum()} of {len(df_cleaned)} customers)")
 
-plt.figure(figsize=(6,4))
-sns.barplot(x=response_by_age.index, y=response_by_age.values, palette="viridis")
-plt.title("📊 Campaign Response Rate by Age Group")
-plt.ylabel("Response Rate")
-plt.xlabel("Age Group")
-plt.ylim(0, 1)
-plt.show()
+def segment_response(col, palette, title):
+    """Response rate by segment, shown with each group's size and a chi-square test.
 
-print("✅ Response Rate by Age Group:")
-print(response_by_age.round(3))
+    Group size matters: a rate from a handful of customers can top the ranking by chance.
+    The chi-square test asks whether response rate varies across the groups at all.
+    """
+    summary = (df_cleaned.groupby(col, observed=True)['Responded']
+               .agg(Customers='size', Responders='sum', Rate='mean')
+               .sort_values('Rate', ascending=False))
+    chi2, p, dof, _ = stats.chi2_contingency(pd.crosstab(df_cleaned[col], df_cleaned['Responded']))
 
-# Response Rate by Education Level 
-response_by_edu = df_cleaned.groupby('Education')['Responded'].mean().sort_values(ascending=False)
+    plt.figure(figsize=(6, 4))
+    sns.barplot(x=summary.index.astype(str), y=summary['Rate'].values,
+                hue=summary.index.astype(str), palette=palette, legend=False)
+    plt.axhline(overall_rate, color='black', linestyle='--', linewidth=1, label='Overall rate')
+    plt.title(title)
+    plt.ylabel("Response Rate")
+    plt.xlabel(col)
+    plt.xticks(rotation=30)
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.show()
 
-plt.figure(figsize=(6,4))
-sns.barplot(x=response_by_edu.index, y=response_by_edu.values, palette="magma")
-plt.title("📊 Campaign Response Rate by Education Level")
-plt.ylabel("Response Rate")
-plt.xlabel("Education Level")
-plt.xticks(rotation=30)
-plt.ylim(0, 1)
-plt.show()
+    print(f"\n✅ Response Rate by {col}:")
+    print(summary.round(3))
+    print(f"   Chi-square test across groups: chi2 = {chi2:.2f}, dof = {dof}, p = {p:.4f}")
+    return summary
 
-print("\n✅ Response Rate by Education:")
-print(response_by_edu.round(3))
+def one_vs_rest(col, value):
+    """Chi-square test of one group against everyone else (e.g. PhD vs all other levels).
+
+    The group tested is the top-ranked one, chosen after seeing the data, so treat the p-value
+    as somewhat optimistic.
+    """
+    p = stats.chi2_contingency(pd.crosstab(df_cleaned[col] == value, df_cleaned['Responded']))[1]
+    print(f"   {value} vs all other customers: p = {p:.4f}")
+
+# Response Rate by Age Group (ages as at the reference year)
+response_by_age = segment_response('Age_Group', "viridis", "📊 Campaign Response Rate by Age Group")
+
+# Response Rate by Education Level
+response_by_edu = segment_response('Education', "magma", "📊 Campaign Response Rate by Education Level")
+one_vs_rest('Education', response_by_edu.index[0])
 
 # Response Rate by Marital Status
-response_by_marital = df_cleaned.groupby('Marital_Status')['Responded'].mean().sort_values(ascending=False)
+response_by_marital = segment_response('Marital_Status', "cubehelix", "📊 Campaign Response Rate by Marital Status")
+one_vs_rest('Marital_Status', response_by_marital.index[0])
 
-plt.figure(figsize=(6,4))
-sns.barplot(x=response_by_marital.index, y=response_by_marital.values, palette="cubehelix")
-plt.title("📊 Campaign Response Rate by Marital Status")
-plt.ylabel("Response Rate")
-plt.xlabel("Marital Status")
-plt.xticks(rotation=30)
-plt.ylim(0, 1)
-plt.show()
-
-print("\n✅ Response Rate by Marital Status:")
-print(response_by_marital.round(3))
+# Customers living with a partner (Married, Together) against those who are not (Single, Divorced, Widow)
+has_partner = df_cleaned['Marital_Status'].isin(['Married', 'Together'])
+partner_table = df_cleaned.groupby(has_partner)['Responded'].agg(Customers='size', Responders='sum', Rate='mean')
+partner_table.index = partner_table.index.map({True: 'With partner', False: 'Without partner'})
+partner_table.index.name = 'Partner'
+print("\n✅ Response Rate by Partner status:")
+print(partner_table.round(3))
+p_partner = stats.chi2_contingency(pd.crosstab(has_partner, df_cleaned['Responded']))[1]
+print(f"   Without partner vs with partner: p = {p_partner:.4f}")
 
 
 
@@ -371,11 +392,17 @@ print(response_by_marital.round(3))
 ## 7) Logistic Regression: Which Channel Predicts Campaign Response : Question 3 
 # ===========================================================================
 
+# Average purchases per channel, responders vs non-responders (no other channel held constant)
+print("\n✅ Average purchases per channel by response:")
+print(df_cleaned.groupby('Responded')[channel_cols].mean().round(2))
+
 # Select Features (x) and Target (y)
 X = df_cleaned[channel_cols]  # already defined as ['NumWebPurchases', 'NumCatalogPurchases', 'NumStorePurchases']
 y = df_cleaned['Responded']
 
-# Standardize the features for interpretability
+# Standardise the features for interpretability
+## Note: the scaler is fitted on all rows before the train/test split (minor leakage into the test set);
+## kept as originally published so the coefficients stay comparable
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X)
 
@@ -420,7 +447,7 @@ plt.ylabel("True Positive Rate")
 plt.legend()
 plt.show()
 
-# Visualize the influence of each channel on campaign response
+# Visualise the influence of each channel on campaign response
 # Create a DataFrame for coefficients (excluding intercept)
 coef_df = pd.DataFrame({
     'Channel': channel_cols,
@@ -436,7 +463,9 @@ ax = sns.barplot(
     data=coef_df, 
     x='Coefficient', 
     y='Channel', 
+    hue='Channel',
     palette='coolwarm', 
+    legend=False,
     edgecolor='black'
 )
 
